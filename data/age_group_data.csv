@@ -1,4 +1,4 @@
-AGE_GROUP,date,onset,reported
+age_group,date,onsets,reported
 0-14,2020-02-19,0.0,0.0
 0-14,2020-02-22,0.0,0.0
 0-14,2020-02-23,0.0,0.0
