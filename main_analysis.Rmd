@@ -185,11 +185,10 @@ res_80_selected_backpro = cp_res_6079$cp_segmented_list_backpro[[which.min(cp_re
 ```
 
 ```{r}
-##### CHANGE THIS TO OUR DATA!!!
-age_bav = read.csv("data/age_dist_bav.csv")
-age_bav_group = age_bav %>% mutate(age_group=cut(Age, c(-1,14,59,79,120), labels = c("0-14", "15-59", "60-79", "80+"))) %>%
+age = read.csv("total_age_distribution.csv")
+age_file = age %>% mutate(age_group=cut(AGE, c(-1,14,59,79,120), labels = c("0-14", "15-59", "60-79", "80+"))) %>%
   group_by(age_group) %>%
-  summarise(n=sum(Num_191231)) 
+  summarise(n=sum(num)) 
 
 
 # Plot:
@@ -210,11 +209,10 @@ plot_age_group = res_014_selected_backpro$segmented_model$model %>%
           mutate(age_group="80+") %>%
           cbind(pred=res_80_selected_backpro$segmented_model$fitted)) %>%
   mutate(t=ymd("2020-02-27")+t) %>%
-  right_join(age_bav_group) %>%
+  right_join(age_file) %>%
   mutate(pred_per_100k = (exp(pred)/n)*100000) %>%
   ggplot() +
-  #geom_line(aes(t, exp(logbackpro), col=age_group), lty=2) +
-  geom_line(aes(t, pred_per_100k, lty=age_group)) +
+  geom_line(aes(t, pred_per_100k, color=age_group)) +
   ylab("Number infections\n per 100k") + xlab("Date") +
   theme(
     axis.text=element_text(size = rel(1.3)),
@@ -225,16 +223,6 @@ plot_age_group = res_014_selected_backpro$segmented_model$model %>%
 
 plot_age_group + ggtitle("Age group") + theme()
 
-
-### this is to plto everything:
-# theme = theme(
-#   axis.text=element_text(size = rel(1.3)),
-#   axis.title=element_text(size = rel(1.3)),
-#   legend.text = element_text(size = rel(1.3)),
-#   legend.title =element_text(size = rel(1.3)))
-# ggpubr::ggarrange(cp_res_full$cp_segmented_list_backpro[[which.min(cp_res_full$bic_backpro)]]$plot +
-#                     ggtitle("Overall") + theme + ylab("Number infections"),
-#                   plot_age_group + ggtitle("Age group") + theme, labels = "AUTO")
 ```
 
 ### Models for 3 cities
