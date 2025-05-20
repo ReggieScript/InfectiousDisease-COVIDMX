@@ -1,0 +1,291 @@
+---
+title: "covid_data_exploration"
+author: "Nora Ghenciulescu"
+date: "2025-05-12"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+theme_set(theme_bw())
+library(lubridate)
+library(segmented)
+library(surveillance)
+library(MASS)
+library(nlme)
+
+library(future)
+library(future.apply)
+plan("multisession")
+options(mc.cores = 6)
+
+library(nleqslv)
+
+
+# USE THEIR CODE (but modified)
+source("code/cp_fun.R")
+```
+
+
+### Overall model
+
+For K = 2,...,6 breakpoints, we run model on entire data.
+
+Data prep:
+
+```{r}
+data <- read_csv("age_group_data.csv", show_col_types = FALSE)
+
+summary(data['date'])
+
+data_full = data %>% group_by(date) %>%
+  summarise(onsets=sum(onsets)) %>%
+  right_join(tibble(date=seq(ymd("2020-02-19"), ymd("2020-05-15"), by = "1 day"))) %>% 
+  arrange(date) %>%
+  mutate(onsets=replace_na(onsets,0))
+
+data_full
+```
+
+```{r}
+cp_res_full = perform_cp_analysis(data = data_full,
+                                      type = "both",
+                                      cp_max_onset = 6,
+                                      cp_max_backpro = 6,
+                                      save_disc_optim_results = T,
+                                      use_disc_optim_results = T,
+                                      name_disc =  "saved_data")
+cp_res_full
+```
+
+BIC:
+
+```{r}
+cp_res_full['bic_backpro']
+```
+
+Optimal number of breakpoints is 3 break points!
+
+
+### Models per age group
+
+```{r}
+# Split data:
+data_014 = data %>% dplyr::filter(age_group=="0-14") %>%
+  group_by(date) %>%
+  summarise(onsets=sum(onsets)) %>%
+  right_join(tibble(date=seq(ymd("2020-02-24"), ymd("2020-05-15"), by = "1 day"))) %>%
+  arrange(date) %>%
+  mutate(onsets=replace_na(onsets,0))
+
+data_1559 = data %>% dplyr::filter(age_group=="15-59") %>%
+  group_by(date) %>%
+  summarise(onsets=sum(onsets)) %>%
+  right_join(tibble(date=seq(ymd("2020-02-24"), ymd("2020-05-15"), by = "1 day"))) %>%
+  arrange(date) %>%
+  mutate(onsets=replace_na(onsets,0))
+
+data_6079 = data %>% dplyr::filter(age_group=="60-79") %>%
+  group_by(date) %>%
+  summarise(onsets=sum(onsets)) %>%
+  right_join(tibble(date=seq(ymd("2020-02-24"), ymd("2020-05-15"), by = "1 day"))) %>%
+  arrange(date) %>%
+  mutate(onsets=replace_na(onsets,0))
+
+data_80 = data %>% dplyr::filter(age_group=="80+") %>%
+  group_by(date) %>%
+  summarise(onsets=sum(onsets)) %>%
+  right_join(tibble(date=seq(ymd("2020-02-24"), ymd("2020-05-15"), by = "1 day"))) %>%
+  arrange(date) %>%
+  mutate(onsets=replace_na(onsets,0))
+```
+
+```{r}
+# Run model for each:
+cp_res_014 = perform_cp_analysis(data = data_014, 
+                                      type = "backpro",
+                                      cp_max_onset = 6, 
+                                      cp_max_backpro = 6,
+                                      save_disc_optim_results = T, 
+                                      use_disc_optim_results = T, 
+                                      name_disc =  "saved_data_014")
+
+res_014_selected_backpro = cp_res_014$cp_segmented_list_backpro[[which.min(cp_res_014$bic_backpro)]]
+```
+
+```{r}
+cp_res_1559 = perform_cp_analysis(data = data_1559, 
+                                      type = "backpro",
+                                      cp_max_onset = 6, 
+                                      cp_max_backpro = 6,
+                                      save_disc_optim_results = T, 
+                                      use_disc_optim_results = T, 
+                                      name_disc =  "saved_data_1559")
+
+res_1559_selected_backpro = cp_res_1559$cp_segmented_list_backpro[[which.min(cp_res_1559$bic_backpro)]]
+```
+
+```{r}
+cp_res_6079 = perform_cp_analysis(data = data_6079, 
+                                      type = "backpro",
+                                      cp_max_onset = 6, 
+                                      cp_max_backpro = 6,
+                                      save_disc_optim_results = T, 
+                                      use_disc_optim_results = T, 
+                                      name_disc =  "saved_data_6079")
+
+res_6079_selected_backpro = cp_res_6079$cp_segmented_list_backpro[[which.min(cp_res_6079$bic_backpro)]]
+```
+
+```{r}
+cp_res_80 = perform_cp_analysis(data = data_80, 
+                                      type = "backpro",
+                                      cp_max_onset = 2, 
+                                      cp_max_backpro = 2,
+                                      save_disc_optim_results = T, 
+                                      use_disc_optim_results = T, 
+                                      name_disc =  "saved_data_80")
+
+res_80_selected_backpro = cp_res_80$cp_segmented_list_backpro[[which.min(cp_res_80$bic_backpro)]]
+```
+!!!! the 80+ group only works for 2 break points (cp_max_onset = 2, cp_max_backpro = 2)
+
+
+```{r}
+age = read.csv("total_age_distribution.csv")
+age_file = age %>% mutate(age_group=cut(AGE, c(-1,14,59,79,120), labels = c("0-14", "15-59", "60-79", "80+"))) %>%
+  group_by(age_group) %>%
+  summarise(n=sum(num)) 
+
+
+# Plot:
+plot_age_group = res_014_selected_backpro$segmented_model$model %>% 
+  dplyr::select(t, logbackpro) %>%
+  mutate(age_group="0-14") %>%
+  cbind(pred=res_014_selected_backpro$segmented_model$fitted) %>%
+  rbind(res_1559_selected_backpro$segmented_model$model %>% 
+          dplyr::select(t, logbackpro) %>%
+          mutate(age_group="15-59") %>%
+          cbind(pred=res_1559_selected_backpro$segmented_model$fitted)) %>%
+  rbind(res_6079_selected_backpro$segmented_model$model %>% 
+          dplyr::select(t, logbackpro) %>%
+          mutate(age_group="60-79") %>%
+          cbind(pred=res_6079_selected_backpro$segmented_model$fitted)) %>%
+  rbind(res_80_selected_backpro$segmented_model$model %>% 
+          dplyr::select(t, logbackpro) %>%
+          mutate(age_group="80+") %>%
+          cbind(pred=res_80_selected_backpro$segmented_model$fitted)) %>%
+  mutate(t=ymd("2020-02-27")+t) %>%
+  right_join(age_file) %>%
+  mutate(pred_per_100k = (exp(pred)/n)*100000) %>%
+  ggplot() +
+  geom_line(aes(t, pred_per_100k, color=age_group)) +
+  ylab("Number infections\n per 100k") + xlab("Date") +
+  theme(
+    axis.text=element_text(size = rel(1.3)),
+    axis.title=element_text(size = rel(1.3)),
+    legend.text = element_text(size = rel(1.3)),
+    legend.title =element_text(size = rel(1.3)))+
+  guides(lty=guide_legend(title="Age group"))
+
+plot_age_group + ggtitle("Age group") + theme()
+
+```
+
+### Models for 3 cities
+
+
+#### Mty:
+
+```{r}
+# data_mty <- read_csv("age_group_data_mty.csv", show_col_types = FALSE)
+# data_mty <- data_mty[ , !(names(data_mty) %in% c('state'))]
+# data_mty
+# 
+# data_mty_full = data_mty %>% group_by(date) %>%
+#   summarise(onsets=sum(onsets)) %>%
+#   right_join(tibble(date=seq(ymd("2020-02-24"), ymd("2020-05-15"), by = "1 day"))) %>% 
+#   arrange(date) %>%
+#   mutate(onsets=replace_na(onsets,0))
+# 
+# data_mty_full
+```
+
+```{r}
+# cp_res_mty = perform_cp_analysis(data = data_mty_full,
+#                                       type = "both",
+#                                       cp_max_onset = 6,
+#                                       cp_max_backpro = 6,
+#                                       save_disc_optim_results = T,
+#                                       use_disc_optim_results = T,
+#                                       name_disc =  "saved_data_mty")
+# cp_res_mty
+```
+
+
+```{r}
+# cp_res_mty['bic_backpro']
+```
+
+
+#### Jal:
+
+```{r}
+# data_jal <- read_csv("age_group_data_jal.csv", show_col_types = FALSE)
+# 
+# data_jal_full = data_jal %>% group_by(date) %>%
+#   summarise(onsets=sum(onsets)) %>%
+#   right_join(tibble(date=seq(ymd("2020-02-24"), ymd("2020-05-15"), by = "1 day"))) %>% 
+#   arrange(date) %>%
+#   mutate(onsets=replace_na(onsets,0))
+# 
+# data_jal_full
+```
+
+```{r}
+# cp_res_jal = perform_cp_analysis(data = data_jal_full,
+#                                       type = "both",
+#                                       cp_max_onset = 6,
+#                                       cp_max_backpro = 6,
+#                                       save_disc_optim_results = T,
+#                                       use_disc_optim_results = T,
+#                                       name_disc =  "saved_data_jal")
+# cp_res_jal
+```
+
+
+```{r}
+# cp_res_jal['bic_backpro']
+```
+
+
+#### Mx:
+
+```{r}
+# data_mx <- read_csv("age_group_data_mx.csv", show_col_types = FALSE)
+# 
+# data_mx_full = data_mx %>% group_by(date) %>%
+#   summarise(onsets=sum(onsets)) %>%
+#   right_join(tibble(date=seq(ymd("2020-02-24"), ymd("2020-05-15"), by = "1 day"))) %>% 
+#   arrange(date) %>%
+#   mutate(onsets=replace_na(onsets,0))
+# 
+# data_mx_full
+```
+
+```{r}
+# cp_res_mx = perform_cp_analysis(data = data_mx_full,
+#                                       type = "both",
+#                                       cp_max_onset = 6,
+#                                       cp_max_backpro = 6,
+#                                       save_disc_optim_results = T,
+#                                       use_disc_optim_results = T,
+#                                       name_disc =  "saved_data_mx")
+# cp_res_mx
+```
+
+
+```{r}
+#cp_res_mx['bic_backpro']
+```
